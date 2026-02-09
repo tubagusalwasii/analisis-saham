@@ -15,7 +15,7 @@ st.markdown("""
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
     .reportview-container .main .block-container { padding-top: 2rem; }
     </style>
-    """, unsafe_base_code=True)
+    """, unsafe_allow_html=True)
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -127,4 +127,5 @@ if st.button("Mulai Analisis"):
             st.error(f"Terjadi kesalahan teknis: {e}")
 
 st.divider()
+
 st.caption("Aplikasi ini dibuat untuk tujuan edukasi. Keputusan investasi ada di tangan Anda sendiri (DYOR).")
