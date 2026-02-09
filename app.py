@@ -67,7 +67,8 @@ if st.button("Mulai Analisis"):
         try:
             # 1. Inisialisasi Gemini 3
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
+            model = genai.GenerativeModel("gemini-flash-latest")
+
             
             with st.spinner(f"Mengambil data {ticker_input}..."):
                 # 2. Ambil Data dari Yahoo Finance
@@ -129,6 +130,7 @@ if st.button("Mulai Analisis"):
 st.divider()
 
 st.caption("Aplikasi ini dibuat untuk tujuan edukasi. Keputusan investasi ada di tangan Anda sendiri (DYOR).")
+
 
 
 
