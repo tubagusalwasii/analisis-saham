@@ -25,17 +25,13 @@ with st.sidebar:
         ["Agresif (Breakout & Bandarmology)", "Konservatif (Value Investing)", "Jangka Panjang (Growth)"]
     )
 
-# --- LOGIKA PROMPT (Point 2: Analisis Bandarmology) ---
 def get_system_prompt(mode, ticker):
     if mode == "Agresif (Breakout & Bandarmology)":
-        return f"""Anda adalah ahli Bandarmology dan Price Action. Fokus pada saham {ticker}.
-        Analisis apakah kenaikan harga didukung lonjakan volume (indikasi akumulasi bandar) atau volume rendah (false breakout).
-        Berikan instruksi Entry, TP, dan SL yang ketat."""
+        return f"Anda adalah ahli Bandarmology dan Price Action. Fokus pada saham {ticker}. Analisis volume dan breakout."
     elif mode == "Konservatif (Value Investing)":
-        return f"""Anda adalah Value Investor. Fokus pada fundamental {ticker}. 
-        Analisis Margin of Safety dan rasio keuangan penting."""
+        return f"Anda adalah Value Investor. Fokus pada fundamental {ticker}."
     else:
-        return f"""Anda adalah Growth Investor. Fokus pada masa depan {ticker}."""
+        return f"Anda adalah Growth Investor. Fokus pada masa depan {ticker}."
 
 # --- UI UTAMA ---
 st.title("📈 Gemini 3 Stock Analyzer")
@@ -48,7 +44,6 @@ if st.button("Mulai Analisis"):
     else:
         try:
             genai.configure(api_key=api_key)
-            # Menggunakan model yang menurutmu stabil
             model = genai.GenerativeModel("gemini-flash-latest")
 
             with st.spinner(f"Menganalisis {ticker_input}..."):
@@ -58,11 +53,24 @@ if st.button("Mulai Analisis"):
                 if hist.empty:
                     st.error("⚠️ Data tidak ditemukan.")
                 else:
-                    # Point 1: Tambah Indikator MA
+                    # --- FITUR BARU: TAMPILAN HARGA REAL-TIME ---
+                    current_price = hist['Close'].iloc[-1]
+                    prev_close = hist['Close'].iloc[-2]
+                    price_diff = current_price - prev_close
+                    percent_diff = (price_diff / prev_close) * 100
+
+                    # Tampilkan metrik harga di atas grafik
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Harga Terakhir", f"Rp {current_price:,.0f}", f"{price_diff:+.0f} ({percent_diff:+.2f}%)")
+                    col2.metric("Volume Hari Ini", f"{hist['Volume'].iloc[-1]:,.0f}")
+                    col3.metric("Harga Tertinggi (H)", f"Rp {hist['High'].iloc[-1]:,.0f}")
+                    st.divider()
+
+                    # Indikator MA
                     hist['MA20'] = hist['Close'].rolling(window=20).mean()
                     hist['MA50'] = hist['Close'].rolling(window=50).mean()
 
-                    # Grafik Candlestick + MA
+                    # Grafik Candlestick
                     fig = go.Figure(data=[
                         go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name="Price"),
                         go.Scatter(x=hist.index, y=hist['MA20'], line=dict(color='orange', width=1), name="MA20"),
@@ -71,15 +79,14 @@ if st.button("Mulai Analisis"):
                     st.plotly_chart(fig, use_container_width=True)
 
                     # Analisis AI
-                    data_summary = f"Harga: {hist['Close'].iloc[-1]}, Vol: {hist['Volume'].iloc[-1]}, PBV: {stock.info.get('priceToBook')}"
+                    data_summary = f"Harga: {current_price}, Vol: {hist['Volume'].iloc[-1]}, PBV: {stock.info.get('priceToBook')}"
                     response = model.generate_content(f"{get_system_prompt(mode, ticker_input)}\n\nData: {data_summary}")
                     
                     st.subheader("🤖 Analisis Gemini")
                     analysis_text = response.text
                     st.markdown(analysis_text)
 
-                    # Point 3: Fitur Download
-                    st.divider()
+                    # Fitur Download
                     st.download_button(
                         label="📥 Download Hasil Analisis",
                         data=analysis_text,
