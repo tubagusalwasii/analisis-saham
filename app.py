@@ -35,10 +35,42 @@ def get_system_prompt(mode, ticker):
 
 # --- UI UTAMA ---
 st.title("📈 Gemini 3 Stock Analyzer")
-ticker_input = st.text_input("Masukkan Kode Saham (Tanpa .JK):", value="BBCA").upper()
+
+# --- FITUR BARU: REKOMENDASI SAHAM HARI INI ---
+if api_key:
+    with st.expander("🚀 Cek Rekomendasi Saham Hari Ini"):
+        if st.button("Generate Rekomendasi"):
+            try:
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel("gemini-flash-latest")
+                
+                # Daftar saham untuk dipindai
+                watchlist = ["BBCA.JK", "ASII.JK", "TLKM.JK", "MBMA.JK", "BUMI.JK", "ERAA.JK"]
+                scan_data = ""
+                
+                with st.spinner("Memindai pasar..."):
+                    for t in watchlist:
+                        s = yf.Ticker(t)
+                        h = s.history(period="2d")
+                        if not h.empty:
+                            change = ((h['Close'].iloc[-1] - h['Close'].iloc[-2]) / h['Close'].iloc[-2]) * 100
+                            scan_data += f"{t}: Harga {h['Close'].iloc[-1]:,.0f}, Perubahan {change:.2f}%\n"
+                
+                rekom_prompt = f"Berdasarkan data berikut, saham mana yang paling menarik untuk dipantau hari ini berdasarkan strategi {mode}?\n{scan_data}"
+                res = model.generate_content(rekom_prompt)
+                st.info(res.text)
+            except Exception as e:
+                st.error(f"Gagal memuat rekomendasi: {e}")
+else:
+    st.warning("Masukkan API Key di sidebar untuk melihat rekomendasi.")
+
+st.divider()
+
+# --- ANALISIS INDIVIDU ---
+ticker_input = st.text_input("Masukkan Kode Saham untuk Analisis Detail (Tanpa .JK):", value="BBCA").upper()
 full_ticker = f"{ticker_input}.JK"
 
-if st.button("Mulai Analisis"):
+if st.button("Mulai Analisis Detail"):
     if not api_key:
         st.error("❌ Masukkan API Key!")
     else:
@@ -53,24 +85,22 @@ if st.button("Mulai Analisis"):
                 if hist.empty:
                     st.error("⚠️ Data tidak ditemukan.")
                 else:
-                    # --- FITUR BARU: TAMPILAN HARGA REAL-TIME ---
+                    # Metrik Harga Real-time
                     current_price = hist['Close'].iloc[-1]
                     prev_close = hist['Close'].iloc[-2]
                     price_diff = current_price - prev_close
                     percent_diff = (price_diff / prev_close) * 100
 
-                    # Tampilkan metrik harga di atas grafik
                     col1, col2, col3 = st.columns(3)
                     col1.metric("Harga Terakhir", f"Rp {current_price:,.0f}", f"{price_diff:+.0f} ({percent_diff:+.2f}%)")
                     col2.metric("Volume Hari Ini", f"{hist['Volume'].iloc[-1]:,.0f}")
-                    col3.metric("Harga Tertinggi (H)", f"Rp {hist['High'].iloc[-1]:,.0f}")
-                    st.divider()
-
+                    col3.metric("Harga Tertinggi", f"Rp {hist['High'].iloc[-1]:,.0f}")
+                    
                     # Indikator MA
                     hist['MA20'] = hist['Close'].rolling(window=20).mean()
                     hist['MA50'] = hist['Close'].rolling(window=50).mean()
 
-                    # Grafik Candlestick
+                    # Grafik
                     fig = go.Figure(data=[
                         go.Candlestick(x=hist.index, open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close'], name="Price"),
                         go.Scatter(x=hist.index, y=hist['MA20'], line=dict(color='orange', width=1), name="MA20"),
@@ -82,7 +112,7 @@ if st.button("Mulai Analisis"):
                     data_summary = f"Harga: {current_price}, Vol: {hist['Volume'].iloc[-1]}, PBV: {stock.info.get('priceToBook')}"
                     response = model.generate_content(f"{get_system_prompt(mode, ticker_input)}\n\nData: {data_summary}")
                     
-                    st.subheader("🤖 Analisis Gemini")
+                    st.subheader(f"🤖 Hasil Analisis {ticker_input}")
                     analysis_text = response.text
                     st.markdown(analysis_text)
 
