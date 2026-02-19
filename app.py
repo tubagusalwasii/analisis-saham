@@ -26,28 +26,31 @@ with st.sidebar:
     )
 
 def get_system_prompt(mode, ticker):
+    # Menambahkan instruksi eksplisit kapan harus BUY dan SELL
+    base_instruction = f"""Anda adalah penasihat keuangan ahli untuk saham {ticker}. 
+    Tugas utama Anda adalah memberikan instruksi spesifik:
+    1. KAPAN UNTUK BUY: Sebutkan harga ideal atau kondisi teknikal/fundamental yang harus dipenuhi.
+    2. KAPAN UNTUK SELL: Sebutkan target harga (Take Profit) dan batasan risiko (Stop Loss)."""
+    
     if mode == "Agresif (Breakout & Bandarmology)":
-        return f"Anda adalah ahli Bandarmology dan Price Action. Fokus pada saham {ticker}. Analisis volume dan breakout."
+        return base_instruction + " Fokus pada momentum, lonjakan volume, dan pola breakout."
     elif mode == "Konservatif (Value Investing)":
-        return f"Anda adalah Value Investor. Fokus pada fundamental {ticker}."
+        return base_instruction + " Fokus pada Margin of Safety, dividen, dan valuasi murah (undervalued)."
     else:
-        return f"Anda adalah Growth Investor. Fokus pada masa depan {ticker}."
+        return base_instruction + " Fokus pada potensi pertumbuhan jangka panjang dan dominasi pasar."
 
 # --- UI UTAMA ---
 st.title("📈 Gemini 3 Stock Analyzer")
 
-# --- FITUR BARU: REKOMENDASI SAHAM HARI INI ---
+# --- FITUR REKOMENDASI SAHAM HARI INI ---
 if api_key:
     with st.expander("🚀 Cek Rekomendasi Saham Hari Ini"):
         if st.button("Generate Rekomendasi"):
             try:
                 genai.configure(api_key=api_key)
                 model = genai.GenerativeModel("gemini-flash-latest")
-                
-                # Daftar saham untuk dipindai
                 watchlist = ["BBCA.JK", "ASII.JK", "TLKM.JK", "MBMA.JK", "BUMI.JK", "ERAA.JK"]
                 scan_data = ""
-                
                 with st.spinner("Memindai pasar..."):
                     for t in watchlist:
                         s = yf.Ticker(t)
@@ -56,18 +59,16 @@ if api_key:
                             change = ((h['Close'].iloc[-1] - h['Close'].iloc[-2]) / h['Close'].iloc[-2]) * 100
                             scan_data += f"{t}: Harga {h['Close'].iloc[-1]:,.0f}, Perubahan {change:.2f}%\n"
                 
-                rekom_prompt = f"Berdasarkan data berikut, saham mana yang paling menarik untuk dipantau hari ini berdasarkan strategi {mode}?\n{scan_data}"
+                rekom_prompt = f"Berdasarkan data berikut, saham mana yang layak BUY hari ini? Berikan alasan singkat.\n{scan_data}"
                 res = model.generate_content(rekom_prompt)
                 st.info(res.text)
             except Exception as e:
                 st.error(f"Gagal memuat rekomendasi: {e}")
-else:
-    st.warning("Masukkan API Key di sidebar untuk melihat rekomendasi.")
 
 st.divider()
 
-# --- ANALISIS INDIVIDU ---
-ticker_input = st.text_input("Masukkan Kode Saham untuk Analisis Detail (Tanpa .JK):", value="BBCA").upper()
+# --- ANALISIS DETAIL ---
+ticker_input = st.text_input("Masukkan Kode Saham (Tanpa .JK):", value="BBCA").upper()
 full_ticker = f"{ticker_input}.JK"
 
 if st.button("Mulai Analisis Detail"):
@@ -85,7 +86,7 @@ if st.button("Mulai Analisis Detail"):
                 if hist.empty:
                     st.error("⚠️ Data tidak ditemukan.")
                 else:
-                    # Metrik Harga Real-time
+                    # Tampilan Harga Real-time
                     current_price = hist['Close'].iloc[-1]
                     prev_close = hist['Close'].iloc[-2]
                     price_diff = current_price - prev_close
@@ -93,8 +94,8 @@ if st.button("Mulai Analisis Detail"):
 
                     col1, col2, col3 = st.columns(3)
                     col1.metric("Harga Terakhir", f"Rp {current_price:,.0f}", f"{price_diff:+.0f} ({percent_diff:+.2f}%)")
-                    col2.metric("Volume Hari Ini", f"{hist['Volume'].iloc[-1]:,.0f}")
-                    col3.metric("Harga Tertinggi", f"Rp {hist['High'].iloc[-1]:,.0f}")
+                    col2.metric("Volume", f"{hist['Volume'].iloc[-1]:,.0f}")
+                    col3.metric("Highest (6mo)", f"Rp {hist['High'].max():,.0f}")
                     
                     # Indikator MA
                     hist['MA20'] = hist['Close'].rolling(window=20).mean()
@@ -108,19 +109,36 @@ if st.button("Mulai Analisis Detail"):
                     ])
                     st.plotly_chart(fig, use_container_width=True)
 
-                    # Analisis AI
-                    data_summary = f"Harga: {current_price}, Vol: {hist['Volume'].iloc[-1]}, PBV: {stock.info.get('priceToBook')}"
-                    response = model.generate_content(f"{get_system_prompt(mode, ticker_input)}\n\nData: {data_summary}")
+                    # --- ANALISIS BUY/SELL AI ---
+                    st.subheader(f"📊 Trading Plan & Analisis {ticker_input}")
                     
-                    st.subheader(f"🤖 Hasil Analisis {ticker_input}")
-                    analysis_text = response.text
-                    st.markdown(analysis_text)
+                    # Menghitung Support & Resistance sederhana untuk input AI
+                    recent_high = hist['High'].iloc[-20:].max()
+                    recent_low = hist['Low'].iloc[-20:].min()
+                    
+                    data_summary = f"""
+                    Data Saham {ticker_input}:
+                    Harga Sekarang: {current_price}
+                    Support Terdekat: {recent_low}
+                    Resistance Terdekat: {recent_high}
+                    MA20: {hist['MA20'].iloc[-1]}
+                    MA50: {hist['MA50'].iloc[-1]}
+                    PBV: {stock.info.get('priceToBook', 'N/A')}
+                    P/E: {stock.info.get('trailingPE', 'N/A')}
+                    """
+                    
+                    prompt = f"{get_system_prompt(mode, ticker_input)}\n\n{data_summary}\n\nBerikan instruksi Kapan Buy dan Kapan Sell yang jelas."
+                    response = model.generate_content(prompt)
+                    
+                    # Menampilkan hasil dengan kotak informasi
+                    st.success("✅ **Sinyal dari AI:**")
+                    st.markdown(response.text)
 
                     # Fitur Download
                     st.download_button(
-                        label="📥 Download Hasil Analisis",
-                        data=analysis_text,
-                        file_name=f"Analisis_{ticker_input}_{datetime.now().strftime('%Y%m%d')}.txt",
+                        label="📥 Simpan Analisis",
+                        data=response.text,
+                        file_name=f"Trading_Plan_{ticker_input}.txt",
                         mime="text/plain"
                     )
 
